@@ -1,0 +1,21 @@
+trigger:
+  batch: true
+  branches:
+    include:
+    - main
+  paths:
+    include:
+    - tricor-connectivity
+
+variables:
+- group: vgp-tricor-landing-zone-terraform
+- name: pipeline.workingDirectory
+  value: 'tricor-connectivity'
+- name: pipeline.environment
+  value: 'tricor-platform-connectivity'
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+- template: template-terraform-deploy.yml

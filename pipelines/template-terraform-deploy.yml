@@ -1,0 +1,118 @@
+stages:
+- stage: 'scan'
+  displayName: 'Perform Code Scanning'
+  jobs:
+  - job: 'ScanCode'
+    steps:
+    - script: 'pip install checkov'
+      displayName: 'Install code scanning tool'
+      enabled: false
+
+    - script: 'checkov -d .'
+      displayName: 'Scan Terraform code'
+      workingDirectory: '$(pipeline.workingDirectory)'
+      continueOnError: true
+      enabled: false
+
+    - task: CmdLine@2
+      inputs:
+        script: |
+          echo "##[command]Obtaining WizCLI from the inter-webs..."
+          sudo curl -o /usr/bin/wizcli https://wizcli.app.wiz.io/latest/wizcli
+          echo "##[command]Making WizCLI executable"
+          sudo chmod +x /usr/bin/wizcli
+          /usr/bin/./wizcli auth --id $(WIZ_CLIENT_ID) --secret $(WIZ_CLIENT_SECRET)
+      displayName: Download latest WizCLI and Authenticate
+
+    - task: CmdLine@2
+      inputs:
+        script: |
+          /usr/bin/./wizcli iac scan --path '$(pipeline.workingDirectory)'
+      displayName: Scan IaC with WizCLI
+
+- stage: 'plan'
+  displayName: 'Prepare Code Deployment'
+  jobs:
+  - job: 'PreparePlan'
+    steps:
+    - script: |
+        az login --service-principal \
+          -u=${TF_ARM_CLIENT_ID} \
+          -p=$TF_ARM_CLIENT_SECRET \
+          --tenant=${TF_ARM_TENANT_ID}
+      displayName: 'Login to Azure CLI'
+      workingDirectory: '$(pipeline.workingDirectory)'
+      env:
+        TF_ARM_CLIENT_SECRET: $(TF_ARM_CLIENT_SECRET)
+      condition: succeededOrFailed()
+    - script: 'terraform --version'
+      displayName: 'Check Terraform version'
+    - script: 'terraform init'
+      displayName: 'Initalize Terraform'
+      workingDirectory: '$(pipeline.workingDirectory)'
+      env:
+        ARM_ACCESS_KEY: $(TF_ARM_ACCESS_KEY)
+        ARM_CLIENT_SECRET: $(TF_ARM_CLIENT_SECRET)
+        ARM_CLIENT_ID: $(TF_ARM_CLIENT_ID)
+        ARM_TENANT_ID: $(TF_ARM_TENANT_ID)
+        ARM_SUBSCRIPTION_ID: $(TF_SUBSCRIPTION_ID)
+      condition: succeededOrFailed()
+    - script: 'terraform plan -out=tfplan'
+      displayName: 'Prepare Terraform Plan'
+      workingDirectory: '$(pipeline.workingDirectory)'
+      env:
+        ARM_ACCESS_KEY: $(TF_ARM_ACCESS_KEY)
+        ARM_CLIENT_ID: $(TF_ARM_CLIENT_ID)
+        ARM_CLIENT_SECRET: $(TF_ARM_CLIENT_SECRET)
+        ARM_TENANT_ID: $(TF_ARM_TENANT_ID)
+        ARM_SUBSCRIPTION_ID: $(TF_ARM_SUBSCRIPTION_ID)
+        TF_VAR_vm_domainjoin_username: $(TF_VM_DOMAINJOIN_USERNAME)
+        TF_VAR_vm_domainjoin_password: $(TF_VM_DOMAINJOIN_PASSWORD)
+        TF_VAR_vm_localadmin_username: $(TF_VM_LOCALADMIN_USERNAME)
+        TF_VAR_vm_localadmin_password: $(TF_VM_LOCALADMIN_PASSWORD)
+    - script: 'rm -rf $(pipeline.workingDirectory)/.terraform'
+      displayName: 'Cleanup .terraform folder'
+    - task: CopyFiles@2
+      displayName: 'Stage Artifacts'
+      inputs:
+        SourceFolder: $(Build.SourcesDirectory)
+        TargetFolder: '$(Build.ArtifactStagingDirectory)'
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Artifact'
+      inputs:
+        pathToPublish: '$(Build.ArtifactStagingDirectory)'
+        artifactName: terraform
+
+- stage: 'deploy'
+  displayName: 'Perform Code Deployment'
+  jobs:
+  - deployment: 'ApplyPlan'
+    environment: '$(pipeline.environment)'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - script: 'terraform --version'
+            displayName: 'Check Terraform version'
+          - script: 'terraform init'
+            displayName: 'Initalize Terraform'
+            workingDirectory: '$(Pipeline.Workspace)/terraform/$(pipeline.workingDirectory)'
+            env:
+              ARM_ACCESS_KEY: $(TF_ARM_ACCESS_KEY)
+              ARM_CLIENT_ID: $(TF_ARM_CLIENT_ID)
+              ARM_CLIENT_SECRET: $(TF_ARM_CLIENT_SECRET)
+              ARM_TENANT_ID: $(TF_ARM_TENANT_ID)
+              ARM_SUBSCRIPTION_ID: $(TF_ARM_SUBSCRIPTION_ID)
+          - script: 'terraform apply -input=false "tfplan"'
+            displayName: 'Apply Terraform Plan'
+            workingDirectory: '$(Pipeline.Workspace)/terraform/$(pipeline.workingDirectory)'
+            env:
+              ARM_ACCESS_KEY: $(TF_ARM_ACCESS_KEY)
+              ARM_CLIENT_ID: $(TF_ARM_CLIENT_ID)
+              ARM_CLIENT_SECRET: $(TF_ARM_CLIENT_SECRET)
+              ARM_TENANT_ID: $(TF_ARM_TENANT_ID)
+              ARM_SUBSCRIPTION_ID: $(TF_ARM_SUBSCRIPTION_ID)
+              TF_VAR_vm_domainjoin_username: $(TF_VM_DOMAINJOIN_USERNAME)
+              TF_VAR_vm_domainjoin_password: $(TF_VM_DOMAINJOIN_PASSWORD)
+              TF_VAR_vm_localadmin_username: $(TF_VM_LOCALADMIN_USERNAME)
+              TF_VAR_vm_localadmin_password: $(TF_VM_LOCALADMIN_PASSWORD)

@@ -1,0 +1,29 @@
+trigger:
+  batch: true
+  branches:
+    include:
+    - main
+  paths:
+    include:
+    - 'tricor-connectivity/ZPA'
+    exclude:
+    - 'modules/*'
+    - 'pipelines/*'
+    - 'samples/*'
+    - 'tricor-connectivity/*'
+    - 'tricor-identity/*'
+    - 'tricor-landing-zone/*'
+    - 'tricor-management/*'
+
+variables:
+- group: vgp-tricor-landing-zone-terraform
+- name: pipeline.workingDirectory
+  value: '.'
+- name: pipeline.environment
+  value: 'tricor-root'
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+- template: template-terraform-deploy.yml

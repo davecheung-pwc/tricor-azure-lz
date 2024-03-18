@@ -1,0 +1,21 @@
+trigger:
+  batch: true
+  branches:
+    include:
+    - main
+  paths:
+    include:
+    - tricor-landing-zone/tricor-go-lz-pd
+
+variables:
+- group: vgp-tricor-landing-zone-terraform
+- name: pipeline.workingDirectory
+  value: 'tricor-landing-zone/tricor-go-lz-pd'
+- name: pipeline.environment
+  value: 'tricor-landing-zone-go-lz-pd'
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+- template: template-terraform-deploy.yml
